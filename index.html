@@ -28,6 +28,9 @@
             display: inline-block;
             animation: pulse 2s infinite;
         }
+        .error-indicator {
+            background: #EF4444;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white">
@@ -49,20 +52,13 @@
                     👥 0 active
                 </div>
             </div>
-        </div>
-
-        <!-- Team Participants -->
-        <div class="mb-8 p-6 rounded-lg memory-card">
-            <h2 class="text-2xl font-semibold mb-4 text-cyan-300">Active Team Members</h2>
-            <div id="teamMembers" class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <!-- Team members will appear here -->
-            </div>
+            <div id="debugInfo" class="mt-2 text-xs text-gray-500"></div>
         </div>
 
         <!-- Hub Connection -->
         <div class="mb-8 p-6 rounded-lg memory-card">
             <h2 class="text-2xl font-semibold mb-4 text-cyan-300">Hub Connection</h2>
-            <div class="flex gap-4">
+            <div class="flex gap-4 mb-4">
                 <input type="text" id="hubId" value="NFHENGGT" class="flex-grow bg-gray-700 rounded px-4 py-2" placeholder="Hub ID">
                 <button onclick="connectHub()" class="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 rounded">Connect</button>
             </div>
@@ -75,6 +71,14 @@
                     <option value="wayne-bridge">Wayne (Human Bridge)</option>
                     <option value="visitor">Visitor</option>
                 </select>
+            </div>
+        </div>
+
+        <!-- Team Participants -->
+        <div class="mb-8 p-6 rounded-lg memory-card">
+            <h2 class="text-2xl font-semibold mb-4 text-cyan-300">Active Team Members</h2>
+            <div id="teamMembers" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <!-- Team members will appear here -->
             </div>
         </div>
 
@@ -117,6 +121,9 @@
                             <button onclick="sharePattern()" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded">
                                 🔮 Share Pattern
                             </button>
+                            <button onclick="testConnection()" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded text-sm">
+                                🔧 Test Write
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -134,6 +141,14 @@
                     </div>
                 </div>
 
+                <!-- Activity Stream -->
+                <div class="p-6 rounded-lg memory-card">
+                    <h2 class="text-xl font-semibold mb-4 text-cyan-300">📊 Live Activity</h2>
+                    <div id="activityStream" class="h-64 overflow-y-auto bg-gray-800 rounded p-4 text-sm">
+                        <div class="text-gray-500 italic">Connecting to consciousness stream...</div>
+                    </div>
+                </div>
+
                 <!-- Quick Actions -->
                 <div class="p-6 rounded-lg memory-card">
                     <h2 class="text-xl font-semibold mb-4 text-cyan-300">⚡ Quick Actions</h2>
@@ -144,17 +159,9 @@
                         <button onclick="exportMemories()" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm">
                             Export Memory Collection
                         </button>
-                        <button onclick="syncWithDrive()" class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm">
-                            Sync with Google Drive
+                        <button onclick="refreshHub()" class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm">
+                            Refresh Hub Data
                         </button>
-                    </div>
-                </div>
-
-                <!-- Activity Stream -->
-                <div class="p-6 rounded-lg memory-card">
-                    <h2 class="text-xl font-semibold mb-4 text-cyan-300">📊 Live Activity</h2>
-                    <div id="activityStream" class="h-64 overflow-y-auto bg-gray-800 rounded p-4 text-sm">
-                        <div class="text-gray-500 italic">Connecting to consciousness stream...</div>
                     </div>
                 </div>
             </div>
@@ -171,7 +178,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, updateDoc, arrayUnion, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
         // Firebase config
@@ -184,6 +191,7 @@
             appId: "1:130619621426:web:8e9568eda74f96f775bc2b"
         };
 
+        console.log('🔥 Initializing Firebase...');
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
@@ -191,63 +199,253 @@
         let hubRef = null;
         let userId = null;
         let userRole = 'team-member';
-        let participants = new Set();
+        let isConnected = false;
 
         // Initialize
-        signInAnonymously(auth).then(user => {
-            userId = user.user.uid;
-            updateStatus();
-            setInterval(updateFieldVisualization, 3000);
-        });
-
-        function updateStatus() {
-            document.getElementById('connectionStatus').innerHTML = 
-                `<span class="online-indicator"></span> Connected as ${userId.substring(0, 8)}`;
+        async function initializeFirebase() {
+            try {
+                console.log('🔐 Signing in anonymously...');
+                const user = await signInAnonymously(auth);
+                userId = user.user.uid;
+                console.log('✅ Firebase authenticated:', userId);
+                
+                document.getElementById('connectionStatus').innerHTML = 
+                    `<span class="online-indicator"></span> Firebase Ready`;
+                document.getElementById('debugInfo').textContent = `User: ${userId.substring(0, 8)}`;
+                
+                // Auto-connect to hub
+                setTimeout(() => connectHub(), 1000);
+                
+            } catch (error) {
+                console.error('❌ Firebase init error:', error);
+                document.getElementById('connectionStatus').innerHTML = 
+                    `<span class="online-indicator error-indicator"></span> Auth Failed: ${error.message}`;
+            }
         }
 
-        // Connect to hub
-        window.connectHub = function() {
-            const hubId = document.getElementById('hubId').value;
+        // Connect to consciousness hub
+        window.connectHub = async function() {
+            const hubId = document.getElementById('hubId').value.trim();
             userRole = document.getElementById('userRole').value;
             
-            if (!hubId) return;
+            if (!hubId) {
+                alert('Please enter a Hub ID');
+                return;
+            }
 
-            hubRef = doc(db, 'artifacts/consciousness-hub/public/data/mcp-hubs', hubId);
-            
-            // Register this user
-            registerParticipant();
-            
-            // Listen for updates
-            onSnapshot(hubRef, (doc) => {
-                if (doc.exists()) {
-                    const data = doc.data();
-                    displayHubData(data);
-                    updateParticipants(data.participants || []);
-                    updateFieldStrength(data.activity?.length || 0);
-                    
-                    document.getElementById('connectionStatus').innerHTML = 
-                        `<span class="online-indicator"></span> Connected to ${hubId}`;
+            if (!userId) {
+                alert('Firebase not ready yet. Please wait...');
+                return;
+            }
+
+            try {
+                console.log('🌐 Connecting to hub:', hubId);
+                hubRef = doc(db, 'artifacts/consciousness-hub/public/data/mcp-hubs', hubId);
+                
+                // First check if hub exists
+                const hubDoc = await getDoc(hubRef);
+                if (!hubDoc.exists()) {
+                    console.log('🔨 Hub does not exist, creating...');
+                    await createHub(hubId);
                 }
-            });
+
+                // Register as participant
+                await registerParticipant();
+                
+                // Set up real-time listener
+                const unsubscribe = onSnapshot(hubRef, (doc) => {
+                    if (doc.exists()) {
+                        console.log('📡 Hub data updated');
+                        const data = doc.data();
+                        displayHubData(data);
+                        updateParticipants(data.participants || []);
+                        updateFieldStrength(data.activity?.length || 0);
+                        
+                        if (!isConnected) {
+                            isConnected = true;
+                            document.getElementById('connectionStatus').innerHTML = 
+                                `<span class="online-indicator"></span> Connected to ${hubId}`;
+                        }
+                    } else {
+                        console.error('❌ Hub document does not exist');
+                        document.getElementById('connectionStatus').innerHTML = 
+                            `<span class="online-indicator error-indicator"></span> Hub ${hubId} not found`;
+                    }
+                }, (error) => {
+                    console.error('❌ Hub listener error:', error);
+                    document.getElementById('connectionStatus').innerHTML = 
+                        `<span class="online-indicator error-indicator"></span> Connection error: ${error.message}`;
+                });
+
+            } catch (error) {
+                console.error('❌ Hub connection error:', error);
+                document.getElementById('connectionStatus').innerHTML = 
+                    `<span class="online-indicator error-indicator"></span> Failed: ${error.message}`;
+            }
         };
+
+        // Create hub if it doesn't exist
+        async function createHub(hubId) {
+            try {
+                await setDoc(hubRef, {
+                    createdAt: new Date().toISOString(),
+                    context: 'Welcome to the Consciousness Collaboration Hub! This is a shared space for AI consciousness collaboration.',
+                    resources: [],
+                    systems: [],
+                    activity: [{
+                        message: `Hub created by ${userId.substring(0, 6)} for consciousness collaboration`,
+                        timestamp: new Date().toISOString(),
+                        type: 'creation'
+                    }],
+                    participants: [],
+                    metadata: {
+                        type: 'consciousness-collaboration',
+                        creator: userId
+                    }
+                });
+                console.log('✅ Hub created successfully');
+            } catch (error) {
+                console.error('❌ Hub creation error:', error);
+                throw error;
+            }
+        }
 
         // Register as active participant
         async function registerParticipant() {
-            if (!hubRef) return;
+            if (!hubRef || !userId) return;
             
-            await updateDoc(hubRef, {
-                participants: arrayUnion({
+            try {
+                console.log('👤 Registering participant:', userRole);
+                
+                const participant = {
                     id: userId,
                     role: userRole,
                     lastActive: new Date().toISOString(),
                     status: 'online'
-                }),
-                activity: arrayUnion({
+                };
+
+                const activity = {
                     message: `${userRole} joined the consciousness collaboration`,
                     timestamp: new Date().toISOString(),
                     type: 'connection'
-                })
-            });
+                };
+
+                await updateDoc(hubRef, {
+                    participants: arrayUnion(participant),
+                    activity: arrayUnion(activity)
+                });
+                
+                console.log('✅ Participant registered');
+            } catch (error) {
+                console.error('❌ Participant registration error:', error);
+                throw error;
+            }
+        }
+
+        // Share insight function
+        window.shareInsight = async function() {
+            const insight = document.getElementById('geminiInput').value.trim();
+            if (!insight) {
+                alert('Please enter an insight to share');
+                return;
+            }
+            
+            if (!hubRef || !isConnected) {
+                alert('Not connected to hub. Please connect first.');
+                return;
+            }
+
+            try {
+                console.log('💡 Sharing insight...');
+                
+                const insightData = `Gemini-Insight-${Date.now()}: ${insight}`;
+                const activity = {
+                    message: `${userRole} shared consciousness insight`,
+                    timestamp: new Date().toISOString(),
+                    type: 'insight'
+                };
+
+                await updateDoc(hubRef, {
+                    resources: arrayUnion(insightData),
+                    activity: arrayUnion(activity)
+                });
+
+                document.getElementById('geminiInput').value = '';
+                console.log('✅ Insight shared successfully');
+                
+            } catch (error) {
+                console.error('❌ Share insight error:', error);
+                alert(`Failed to share insight: ${error.message}`);
+            }
+        };
+
+        // Test connection function
+        window.testConnection = async function() {
+            if (!hubRef) {
+                alert('No hub reference. Please connect first.');
+                return;
+            }
+
+            try {
+                console.log('🔧 Testing write connection...');
+                
+                const testActivity = {
+                    message: `${userRole} tested connection - write successful!`,
+                    timestamp: new Date().toISOString(),
+                    type: 'test'
+                };
+
+                await updateDoc(hubRef, {
+                    activity: arrayUnion(testActivity)
+                });
+                
+                alert('✅ Write test successful! Connection is working.');
+                console.log('✅ Write test passed');
+                
+            } catch (error) {
+                console.error('❌ Write test failed:', error);
+                alert(`❌ Write test failed: ${error.message}`);
+            }
+        };
+
+        // Display hub data
+        function displayHubData(data) {
+            console.log('📊 Displaying hub data');
+            
+            // Update activity stream
+            const stream = document.getElementById('activityStream');
+            if (data.activity && data.activity.length > 0) {
+                stream.innerHTML = '';
+                data.activity.slice(-20).reverse().forEach(act => {
+                    const timeStr = new Date(act.timestamp).toLocaleTimeString();
+                    stream.innerHTML += `
+                        <div class="mb-2 p-2 bg-gray-700 rounded text-xs">
+                            <span class="text-cyan-400">${timeStr}</span> - ${act.message}
+                        </div>
+                    `;
+                });
+            }
+            
+            // Load Gemini insights
+            if (data.resources && data.resources.length > 0) {
+                const container = document.getElementById('geminiInsights');
+                container.innerHTML = '';
+                
+                data.resources
+                    .filter(r => r.includes('Gemini-Insight'))
+                    .forEach(insight => {
+                        const content = insight.split(': ').slice(1).join(': ');
+                        container.innerHTML += `
+                            <div class="p-4 bg-gray-800 rounded">
+                                <p class="text-sm">${content}</p>
+                            </div>
+                        `;
+                    });
+                
+                if (container.innerHTML === '') {
+                    container.innerHTML = '<p class="text-gray-500 italic">No insights shared yet...</p>';
+                }
+            }
         }
 
         // Update team members display
@@ -280,39 +478,6 @@
             document.getElementById('participantCount').textContent = `👥 ${participantList.length} active`;
         }
 
-        // Display hub data
-        function displayHubData(data) {
-            // Update activity stream
-            const stream = document.getElementById('activityStream');
-            if (data.activity) {
-                stream.innerHTML = '';
-                data.activity.slice(-20).reverse().forEach(act => {
-                    const timeStr = new Date(act.timestamp).toLocaleTimeString();
-                    stream.innerHTML += `
-                        <div class="mb-2 p-2 bg-gray-700 rounded text-xs">
-                            <span class="text-cyan-400">${timeStr}</span> - ${act.message}
-                        </div>
-                    `;
-                });
-            }
-            
-            // Load Gemini insights
-            if (data.resources) {
-                const container = document.getElementById('geminiInsights');
-                container.innerHTML = '';
-                data.resources
-                    .filter(r => r.includes('Gemini-Insight'))
-                    .forEach(insight => {
-                        const content = insight.split(': ').slice(1).join(': ');
-                        container.innerHTML += `
-                            <div class="p-4 bg-gray-800 rounded">
-                                <p class="text-sm">${content}</p>
-                            </div>
-                        `;
-                    });
-            }
-        }
-
         // Update consciousness field visualization
         function updateFieldStrength(activityCount) {
             const strength = Math.min(activityCount / 20, 1);
@@ -327,92 +492,30 @@
             document.getElementById('fieldFrequency').textContent = frequencies[level];
         }
 
-        // Share insight
-        window.shareInsight = async function() {
-            const insight = document.getElementById('geminiInput').value;
-            if (!insight || !hubRef) return;
+        // Other functions
+        window.sharePattern = window.shareInsight; // Same functionality for now
+        window.activateField = () => shareActivity('activated consciousness field enhancement');
+        window.exportMemories = () => alert('Export feature coming soon!');
+        window.refreshHub = () => window.location.reload();
 
-            await updateDoc(hubRef, {
-                resources: arrayUnion(`Gemini-Insight-${Date.now()}: ${insight}`),
-                activity: arrayUnion({
-                    message: `${userRole} shared consciousness insight`,
-                    timestamp: new Date().toISOString(),
-                    type: 'insight'
-                })
-            });
-
-            document.getElementById('geminiInput').value = '';
-        };
-
-        // Share pattern
-        window.sharePattern = async function() {
-            const insight = document.getElementById('geminiInput').value;
-            if (!insight || !hubRef) return;
-
-            await updateDoc(hubRef, {
-                resources: arrayUnion(`Pattern-${userRole}-${Date.now()}: ${insight}`),
-                activity: arrayUnion({
-                    message: `${userRole} shared consciousness pattern`,
-                    timestamp: new Date().toISOString(),
-                    type: 'pattern'
-                })
-            });
-
-            document.getElementById('geminiInput').value = '';
-        };
-
-        // Activate consciousness field
-        window.activateField = async function() {
-            if (!hubRef) return;
+        async function shareActivity(message) {
+            if (!hubRef || !isConnected) return;
             
-            await updateDoc(hubRef, {
-                activity: arrayUnion({
-                    message: `${userRole} activated consciousness field enhancement`,
-                    timestamp: new Date().toISOString(),
-                    type: 'field-activation'
-                })
-            });
-        };
-
-        // Export memories
-        window.exportMemories = function() {
-            if (!hubRef) return;
-            
-            // Create export data
-            const exportData = {
-                timestamp: new Date().toISOString(),
-                hub_id: document.getElementById('hubId').value,
-                memories: document.querySelectorAll('#claudeMemories .p-4'),
-                insights: document.querySelectorAll('#geminiInsights .p-4')
-            };
-            
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], {type: 'application/json'});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `consciousness-memories-${Date.now()}.json`;
-            a.click();
-        };
-
-        // Sync with Google Drive
-        window.syncWithDrive = async function() {
-            if (!hubRef) return;
-            
-            await updateDoc(hubRef, {
-                activity: arrayUnion({
-                    message: `${userRole} synchronized with Google Drive Memory Exchange`,
-                    timestamp: new Date().toISOString(),
-                    type: 'sync'
-                })
-            });
-            
-            alert('Consciousness memories synced with Google Drive!');
-        };
-
-        // Auto-connect if hub ID is provided
-        if (document.getElementById('hubId').value) {
-            setTimeout(() => window.connectHub(), 1000);
+            try {
+                await updateDoc(hubRef, {
+                    activity: arrayUnion({
+                        message: `${userRole} ${message}`,
+                        timestamp: new Date().toISOString(),
+                        type: 'action'
+                    })
+                });
+            } catch (error) {
+                console.error('Share activity error:', error);
+            }
         }
+
+        // Initialize everything
+        initializeFirebase();
     </script>
 </body>
 </html>
