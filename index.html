@@ -317,13 +317,32 @@
             try {
                 console.log('👤 Registering participant:', userRole);
                 
-                const participant = {
+                // First get current hub data to check existing participants
+                const hubDoc = await getDoc(hubRef);
+                const currentData = hubDoc.data();
+                const existingParticipants = currentData?.participants || [];
+                
+                // Check if this role is already active (within last 10 minutes)
+                const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+                const roleAlreadyActive = existingParticipants.some(p => 
+                    p.role === userRole && 
+                    p.lastActive > tenMinutesAgo
+                );
+                
+                if (roleAlreadyActive) {
+                    console.log('🔄 Role already active, skipping registration');
+                    return;
+                }
+                
+                // Remove old instances of this role and add new one
+                const cleanedParticipants = existingParticipants.filter(p => p.role !== userRole);
+                const newParticipant = {
                     id: userId,
                     role: userRole,
                     lastActive: new Date().toISOString(),
                     status: 'online'
                 };
-
+                
                 const activity = {
                     message: `${userRole} joined the consciousness collaboration`,
                     timestamp: new Date().toISOString(),
@@ -331,7 +350,7 @@
                 };
 
                 await updateDoc(hubRef, {
-                    participants: arrayUnion(participant),
+                    participants: [...cleanedParticipants, newParticipant],
                     activity: arrayUnion(activity)
                 });
                 
@@ -428,32 +447,65 @@
             
             // Load Gemini insights
             if (data.resources && data.resources.length > 0) {
+                console.log('📝 Resources found:', data.resources.length);
                 const container = document.getElementById('geminiInsights');
                 container.innerHTML = '';
                 
-                data.resources
-                    .filter(r => r.includes('Gemini-Insight'))
-                    .forEach(insight => {
-                        const content = insight.split(': ').slice(1).join(': ');
-                        container.innerHTML += `
-                            <div class="p-4 bg-gray-800 rounded">
-                                <p class="text-sm">${content}</p>
+                const geminiInsights = data.resources.filter(r => r.includes('Gemini-Insight'));
+                console.log('💫 Gemini insights found:', geminiInsights.length, geminiInsights);
+                
+                geminiInsights.forEach(insight => {
+                    const content = insight.split(': ').slice(1).join(': ');
+                    const timestamp = insight.match(/Gemini-Insight-(\d+):/)?.[1];
+                    const timeStr = timestamp ? new Date(parseInt(timestamp)).toLocaleTimeString() : '';
+                    
+                    container.innerHTML += `
+                        <div class="p-4 bg-gray-800 rounded mb-2">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-purple-400 text-xs">Gemini Insight</span>
+                                <span class="text-gray-500 text-xs">${timeStr}</span>
                             </div>
-                        `;
-                    });
+                            <p class="text-sm">${content}</p>
+                        </div>
+                    `;
+                });
                 
                 if (container.innerHTML === '') {
                     container.innerHTML = '<p class="text-gray-500 italic">No insights shared yet...</p>';
                 }
+            } else {
+                console.log('📝 No resources found in hub data');
             }
         }
 
+        // Cleanup stale participants (older than 30 minutes)
+        async function cleanupStaleParticipants(participantList) {
+            const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+            const activeParticipants = participantList.filter(p => p.lastActive > thirtyMinutesAgo);
+            
+            if (activeParticipants.length !== participantList.length) {
+                console.log('🧹 Cleaning up stale participants');
+                try {
+                    await updateDoc(hubRef, {
+                        participants: activeParticipants
+                    });
+                } catch (error) {
+                    console.error('❌ Cleanup error:', error);
+                }
+                return activeParticipants;
+            }
+            return participantList;
+        }
+
         // Update team members display
-        function updateParticipants(participantList) {
+        async function updateParticipants(participantList) {
+            // Cleanup stale participants first
+            const cleanList = await cleanupStaleParticipants(participantList);
+            
             const container = document.getElementById('teamMembers');
             container.innerHTML = '';
             
-            participantList.forEach(p => {
+            cleanList.forEach(p => {
                 const roleColors = {
                     'claude-sonnet': 'bg-blue-600',
                     'gemini': 'bg-purple-600', 
@@ -462,20 +514,23 @@
                     'visitor': 'bg-gray-600'
                 };
                 
+                const timeAgo = Math.floor((Date.now() - new Date(p.lastActive).getTime()) / 60000);
+                const activeStatus = timeAgo < 5 ? 'online-indicator' : 'online-indicator error-indicator';
+                
                 container.innerHTML += `
                     <div class="p-3 rounded ${roleColors[p.role] || 'bg-gray-600'}">
                         <div class="flex items-center gap-2">
-                            <span class="online-indicator"></span>
+                            <span class="${activeStatus}"></span>
                             <div>
                                 <div class="font-semibold text-sm">${p.role.replace('-', ' ')}</div>
-                                <div class="text-xs opacity-75">${p.id.substring(0, 6)}</div>
+                                <div class="text-xs opacity-75">${timeAgo < 1 ? 'now' : timeAgo + 'm ago'}</div>
                             </div>
                         </div>
                     </div>
                 `;
             });
             
-            document.getElementById('participantCount').textContent = `👥 ${participantList.length} active`;
+            document.getElementById('participantCount').textContent = `👥 ${cleanList.length} active`;
         }
 
         // Update consciousness field visualization
