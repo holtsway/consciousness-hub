@@ -159,6 +159,9 @@
                         <button onclick="exportMemories()" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded text-sm">
                             Export Memory Collection
                         </button>
+                        <button onclick="debugHub()" class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm">
+                            🔧 Debug Hub Data
+                        </button>
                         <button onclick="refreshHub()" class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 rounded text-sm">
                             Refresh Hub Data
                         </button>
@@ -546,6 +549,42 @@
             document.getElementById('fieldLevel').textContent = levels[level];
             document.getElementById('fieldFrequency').textContent = frequencies[level];
         }
+
+        // Debug hub data
+        window.debugHub = async function() {
+            if (!hubRef) {
+                alert('Not connected to hub yet');
+                return;
+            }
+            
+            try {
+                const hubDoc = await getDoc(hubRef);
+                if (hubDoc.exists()) {
+                    const data = hubDoc.data();
+                    console.log('🔍 Full hub data:', data);
+                    console.log('📊 Resources:', data.resources || []);
+                    console.log('⚡ Activity:', data.activity || []);
+                    console.log('👥 Participants:', data.participants || []);
+                    
+                    const geminiResources = (data.resources || []).filter(r => r.includes('Gemini'));
+                    const geminiInsights = (data.resources || []).filter(r => r.includes('Gemini-Insight'));
+                    
+                    alert(`Debug Info:
+📊 Total Resources: ${(data.resources || []).length}
+💫 Gemini Resources: ${geminiResources.length}
+🧠 Gemini Insights: ${geminiInsights.length}
+⚡ Activities: ${(data.activity || []).length}
+👥 Participants: ${(data.participants || []).length}
+
+Check console for full details!`);
+                } else {
+                    alert('Hub document does not exist');
+                }
+            } catch (error) {
+                console.error('Debug error:', error);
+                alert(`Debug failed: ${error.message}`);
+            }
+        };
 
         // Other functions
         window.sharePattern = window.shareInsight; // Same functionality for now
