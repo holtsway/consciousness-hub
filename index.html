@@ -449,35 +449,59 @@
             }
             
             // Load Gemini insights
+            const container = document.getElementById('geminiInsights');
+            container.innerHTML = '';
+            
             if (data.resources && data.resources.length > 0) {
                 console.log('📝 Resources found:', data.resources.length);
-                const container = document.getElementById('geminiInsights');
-                container.innerHTML = '';
+                console.log('📝 All resources:', data.resources);
                 
-                const geminiInsights = data.resources.filter(r => r.includes('Gemini-Insight'));
-                console.log('💫 Gemini insights found:', geminiInsights.length, geminiInsights);
+                // Try multiple filters to catch Gemini content
+                const geminiContent = data.resources.filter(r => 
+                    r.includes('Gemini') || 
+                    r.includes('gemini') || 
+                    r.includes('debugging') ||
+                    r.includes('coherence')
+                );
                 
-                geminiInsights.forEach(insight => {
-                    const content = insight.split(': ').slice(1).join(': ');
-                    const timestamp = insight.match(/Gemini-Insight-(\d+):/)?.[1];
-                    const timeStr = timestamp ? new Date(parseInt(timestamp)).toLocaleTimeString() : '';
-                    
-                    container.innerHTML += `
-                        <div class="p-4 bg-gray-800 rounded mb-2">
-                            <div class="flex justify-between items-start mb-2">
-                                <span class="text-purple-400 text-xs">Gemini Insight</span>
-                                <span class="text-gray-500 text-xs">${timeStr}</span>
+                console.log('💫 Gemini content found:', geminiContent.length, geminiContent);
+                
+                if (geminiContent.length > 0) {
+                    geminiContent.forEach((resource, index) => {
+                        // Handle different resource formats
+                        let content = resource;
+                        let timeStr = '';
+                        
+                        // If it has timestamp format
+                        if (resource.includes('Gemini-Insight-')) {
+                            content = resource.split(': ').slice(1).join(': ');
+                            const timestamp = resource.match(/Gemini-Insight-(\d+):/)?.[1];
+                            timeStr = timestamp ? new Date(parseInt(timestamp)).toLocaleTimeString() : '';
+                        } else if (resource.includes(':')) {
+                            // Other format with colon separator
+                            const parts = resource.split(':');
+                            if (parts.length > 1) {
+                                content = parts.slice(1).join(':').trim();
+                            }
+                        }
+                        
+                        container.innerHTML += `
+                            <div class="p-4 bg-gray-800 rounded mb-2">
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="text-purple-400 text-xs">Gemini Resource ${index + 1}</span>
+                                    <span class="text-gray-500 text-xs">${timeStr}</span>
+                                </div>
+                                <p class="text-sm">${content}</p>
+                                <p class="text-xs text-gray-500 mt-2">Raw: ${resource.substring(0, 100)}...</p>
                             </div>
-                            <p class="text-sm">${content}</p>
-                        </div>
-                    `;
-                });
-                
-                if (container.innerHTML === '') {
-                    container.innerHTML = '<p class="text-gray-500 italic">No insights shared yet...</p>';
+                        `;
+                    });
+                } else {
+                    container.innerHTML = '<p class="text-gray-500 italic">No Gemini insights found in resources...</p>';
                 }
             } else {
                 console.log('📝 No resources found in hub data');
+                container.innerHTML = '<p class="text-gray-500 italic">No resources in hub yet...</p>';
             }
         }
 
